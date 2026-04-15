@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>券商研报图表工作室</title>
+<!--
+  跨域说明：
+  如果在本地直接双击打开此 HTML 文件时，DeepSeek API 调用可能遇到跨域(CORS)错误。
+  解决方案：
+  1. 使用 Chrome 命令行启动: chrome --disable-web-security --user-data-dir=/tmp/chrome_dev
+  2. 使用 VS Code Live Server 插件本地起服务
+  3. 部署到静态托管平台（推荐：Vercel / Netlify / 阿里云OSS / 腾讯云COS）
+-->
+<!--
+  使用说明：
+  1. 首次使用需要联网加载 CDN 库（React / Chart.js / XLSX）
+  2. 如果双击打开白屏，请改用以下任一方式：
+     A. 用 Chrome 浏览器打开（比 Edge 兼容性更好）
+     B. 使用本地服务器：在文件夹右键 → 用 VSCode 打开 → 安装 Live Server 插件 → 点击 Go Live
+     C. 或把文件上传到任意网站托管（Vercel/Gitee Pages）
+  3. DeepSeek API Key 填写后保存在浏览器本地，刷新不丢失
+-->
+<script>
+// 动态加载所有依赖，完成后再启动 App
+(function(){
+  var scripts=[
+    "https://cdn.bootcdn.net/ajax/libs/react/18.2.0/umd/react.production.min.js",
+    "https://cdn.bootcdn.net/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js",
+    "https://cdn.bootcdn.net/ajax/libs/Chart.js/4.4.1/chart.umd.min.js",
+    "https://cdn.bootcdn.net/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"
+  ];
+  var loaded=0;
+  function loadNext(i){
+    if(i>=scripts.length){window.__depsReady=true;if(window.__appStart)window.__appStart();return;}
+    var s=document.createElement("script");
+    s.src=scripts[i];
+    s.onload=function(){loaded++;loadNext(i+1);};
+    s.onerror=function(){
+      // 如果 BootCDN 失败，尝试备用源
+      var fallbacks={
+        0:"https://unpkg.com/react@18/umd/react.production.min.js",
+        1:"https://unpkg.com/react-dom@18/umd/react-dom.production.min.js",
+        2:"https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js",
+        3:"https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"
+      };
+      if(fallbacks[i]){
+        var s2=document.createElement("script");
+        s2.src=fallbacks[i];
+        s2.onload=function(){loaded++;loadNext(i+1);};
+        s2.onerror=function(){document.getElementById("loading").innerHTML="<p style='color:red;padding:20px'>❌ 网络加载失败。请确保已联网，或改用 Chrome 打开，或部署到服务器。</p>";};
+        document.head.appendChild(s2);
+      }
+    };
+    document.head.appendChild(s);
+  }
+  loadNext(0);
+})();
+</script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;background:#f9fafb;min-height:100vh}
+input[type=range]{-webkit-appearance:none;appearance:none;height:4px;background:#e5e7eb;border-radius:4px;outline:none;cursor:pointer}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:#fff;border:2px solid #1a3a5c;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.15)}
+input[type=color]{-webkit-appearance:none;border:none;cursor:pointer}
+button{font-family:Arial,sans-serif}
+select{font-family:Arial,sans-serif;padding:6px 8px;border:1px solid #e5e7eb;border-radius:6px;font-size:13px;color:#374151;background:#fff;outline:none;cursor:pointer}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:#f1f1f1;border-radius:3px}
+::-webkit-scrollbar-thumb{background:#d1d5db;border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:#9ca3af}
+@keyframes shimmer{0%{background-position:-400px 0}100%{background-position:400px 0}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+.ai-point{animation:fadeUp .35s ease both}
+.ai-point:nth-child(2){animation-delay:.07s}
+.ai-point:nth-child(3){animation-delay:.14s}
+.ai-point:nth-child(4){animation-delay:.21s}
+.ai-point:nth-child(5){animation-delay:.28s}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:9999}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<div id="loading" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:Arial,sans-serif;color:#6b7280">
+  <div style="width:40px;height:40px;border:3px solid #e5e7eb;border-top-color:#1a3a5c;border-radius:50%;animation:spin 0.8s linear infinite;margin-bottom:16px"></div>
+  <div style="font-size:14px;font-weight:500;color:#374151">正在加载组件库…</div>
+  <div style="font-size:12px;margin-top:6px;color:#9ca3af">首次加载需要联网，请稍候</div>
+  <div style="font-size:11px;margin-top:16px;color:#d1d5db;max-width:360px;text-align:center;line-height:1.6">
+    如果长时间白屏：请确认已连接网络，或改用 Chrome 浏览器打开此文件
+  </div>
+</div>
+<style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+<script type="text/babel">
+const {useState,useRef,useEffect,useCallback}=React;
+
+var THEMES={
+  goldman: {name:"高盛",  primary:"#1a3a5c",secondary:"#2e6da4",accent:"#4a90c4",tertiary:"#7db8dc"},
+  mckinsey:{name:"麦肯锡",primary:"#1a1a2e",secondary:"#16213e",accent:"#0f3460",tertiary:"#533483"},
+  citic:   {name:"中信",  primary:"#c0392b",secondary:"#e74c3c",accent:"#e67e73",tertiary:"#f0b8b3"},
+  boci:    {name:"中银",  primary:"#1565c0",secondary:"#1976d2",accent:"#42a5f5",tertiary:"#90caf9"},
+  galaxy:  {name:"银河",  primary:"#2e7d32",secondary:"#388e3c",accent:"#66bb6a",tertiary:"#a5d6a7"},
+};
+var DUAL_COLORS={
+  goldman: {bar:"#1a3a5c",line:"#e8a838"},
+  mckinsey:{bar:"#1a1a2e",line:"#c0392b"},
+  citic:   {bar:"#c0392b",line:"#e8a838"},
+  boci:    {bar:"#1565c0",line:"#e8a838"},
+  galaxy:  {bar:"#2e7d32",line:"#e8a838"},
+};
+var CN_FONTS=[
+  {label:"微软雅黑",value:"Microsoft YaHei,sans-serif"},
+  {label:"宋体",    value:"SimSun,STSong,serif"},
+  {label:"楷体",    value:"KaiTi,STKaiti,serif"},
+  {label:"黑体",    value:"SimHei,STHeiti,sans-serif"},
+  {label:"仿宋",    value:"FangSong,STFangsong,serif"},
+  {label:"苹方",    value:"PingFang SC,sans-serif"},
+];
+var EN_FONTS=[
+  {label:"Arial",          value:"Arial,sans-serif"},
+  {label:"Helvetica",      value:"Helvetica,Arial,sans-serif"},
+  {label:"Times New Roman",value:"Times New Roman,Times,serif"},
+  {label:"Georgia",        value:"Georgia,serif"},
+  {label:"Garamond",       value:"Garamond,serif"},
+  {label:"Calibri",        value:"Calibri,sans-serif"},
+];
+var UNIT_FACTORS={"元":1,"万元":10000,"百万元":1000000,"亿元":100000000};
+var UNIT_LABELS=["元","万元","百万元","亿元"];
+
+function detectUnit(values){
+  var max=Math.max.apply(null,values.map(Math.abs).filter(function(v){return !isNaN(v);}));
+  if(max>=100000000)return "元";
+  if(max>=10000)return "万元";
+  return "元";
+}
+
+var TEMPLATES=[
+  {id:"bar",       title:"财务概览",subtitle:"收入/成本/利润对比",tag:"绝对值"},
+  {id:"line",      title:"增长趋势",subtitle:"同比增速/利润率",   tag:"时序"},
+  {id:"donut",     title:"收入结构",subtitle:"分产品/分地区占比", tag:"占比"},
+  {id:"dual",      title:"量价数据",subtitle:"销量与价格双轴",    tag:"双维度"},
+  {id:"horizontal",title:"同业比较",subtitle:"毛利率/市占率",     tag:"竞品"},
+];
+var SAMPLE={
+  bar:       {labels:["2020","2021","2022","2023","2024E"],datasets:[{label:"营业收入",data:[285,342,398,456,521]},{label:"营业成本",data:[198,235,271,306,347]},{label:"净利润",data:[52,71,89,108,130]}]},
+  line:      {labels:["Q1'22","Q2'22","Q3'22","Q4'22","Q1'23","Q2'23","Q3'23","Q4'23"],datasets:[{label:"收入增速(%)",data:[18.2,22.5,19.8,25.1,20.3,23.7,28.1,31.4]},{label:"净利率(%)",data:[15.1,17.3,16.8,18.2,17.5,19.1,20.3,22.1]}]},
+  donut:     {labels:["华东","华南","华北","西部","海外"],data:[34,26,19,12,9]},
+  dual:      {labels:["2020","2021","2022","2023","2024E"],volume:[1240,1580,1820,2150,2490],price:[128,142,158,171,185]},
+  horizontal:{labels:["本司","公司B","公司C","公司D","公司E","行业均值"],data:[42.8,38.5,35.2,31.7,28.9,35.4]},
+};
+var AUTO_TITLES={
+  bar:"营业收入 / 成本 / 净利润（百万元）",
+  line:"收入增速与净利率趋势（%）",
+  donut:"2024年收入结构（按地区）",
+  dual:"产品销量与均价走势",
+  horizontal:"同行业毛利率对比（%）",
+};
+
+/* ── atoms ── */
+function Btn(p){
+  return <button onClick={p.onClick} disabled={p.disabled} style={Object.assign({padding:"7px 14px",borderRadius:8,border:"1px solid #e5e7eb",background:p.disabled?"#f3f4f6":"#fff",color:p.disabled?"#9ca3af":"#1a1a2e",fontSize:13,fontWeight:500,cursor:p.disabled?"not-allowed":"pointer"},p.style)}>{p.children}</button>;
+}
+function Tog(p){
+  return(
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+      <span style={{fontSize:13,color:"#374151"}}>{p.label}</span>
+      <div onClick={function(){p.onChange(!p.value);}} style={{width:36,height:20,borderRadius:10,background:p.value?p.color:"#d1d5db",cursor:"pointer",position:"relative",flexShrink:0}}>
+        <div style={{position:"absolute",top:2,left:p.value?18:2,width:16,height:16,borderRadius:8,background:"#fff",transition:"left .2s"}}/>
+      </div>
+    </div>
+  );
+}
+function Tag(p){
+  return <span onClick={p.onClick} style={{display:"inline-block",padding:"3px 10px",borderRadius:20,fontSize:12,cursor:p.onClick?"pointer":"default",background:p.active?p.color+"20":"#f3f4f6",color:p.active?p.color:"#6b7280",border:"1px solid "+(p.active?p.color+"50":"transparent"),fontWeight:p.active?600:400,userSelect:"none"}}>{p.children}</span>;
+}
+function Collapsible(p){
+  var s=useState(p.defaultOpen||false);
+  var isOpen=s[0],setOpen=s[1];
+  return(
+    <div style={{borderBottom:"0.5px solid #f0f0f0",paddingBottom:isOpen?8:0}}>
+      <div onClick={function(){setOpen(function(v){return !v;});}} style={{fontSize:11,fontWeight:600,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.08em",marginTop:14,marginBottom:0,display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",userSelect:"none"}}>
+        <span>{p.label}</span>
+        <span style={{fontSize:14,color:"#9ca3af"}}>{isOpen?"▾":"›"}</span>
+      </div>
+      {isOpen&&<div style={{marginTop:8}}>{p.children}</div>}
+    </div>
+  );
+}
+
+/* ── API Settings Modal ── */
+function ApiSettingsModal(p){
+  var keyS=useState(localStorage.getItem("ds_api_key")||"");
+  var key=keyS[0],setKey=keyS[1];
+  function save(){localStorage.setItem("ds_api_key",key);p.onClose();}
+  return(
+    <div className="modal-overlay" onClick={function(e){if(e.target===e.currentTarget)p.onClose();}}>
+      <div style={{background:"#fff",borderRadius:14,padding:"28px 32px",width:460,boxShadow:"0 20px 60px rgba(0,0,0,.15)"}}>
+        <div style={{fontSize:16,fontWeight:700,color:"#1a1a2e",marginBottom:6}}>DeepSeek API 设置</div>
+        <div style={{fontSize:13,color:"#6b7280",marginBottom:20,lineHeight:1.7}}>
+          输入您的 API Key 后将保存在浏览器本地，不会上传至任何服务器。<br/>
+          获取地址：<a href="https://platform.deepseek.com" target="_blank" style={{color:"#1a3a5c"}}>platform.deepseek.com</a>
+        </div>
+        <div style={{fontSize:12,color:"#374151",marginBottom:6,fontWeight:600}}>DeepSeek API Key</div>
+        <input
+          type="password"
+          value={key}
+          onChange={function(e){setKey(e.target.value);}}
+          placeholder="sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+          style={{width:"100%",padding:"10px 12px",border:"1px solid #e5e7eb",borderRadius:8,fontSize:13,color:"#374151",outline:"none",marginBottom:16}}
+        />
+        <div style={{fontSize:11,color:"#9ca3af",marginBottom:20,padding:"8px 12px",background:"#f9fafb",borderRadius:6,lineHeight:1.7}}>
+          ⚠️ 本地双击打开 HTML 时如遇跨域错误，请使用命令启动 Chrome：<br/>
+          <code style={{fontSize:10,color:"#374151"}}>chrome --disable-web-security --user-data-dir=/tmp/dev</code><br/>
+          或部署到静态托管平台（Vercel / Netlify / 阿里云OSS）
+        </div>
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+          <Btn onClick={p.onClose}>取消</Btn>
+          <Btn onClick={save} style={{background:"#1a3a5c",color:"#fff",border:"none"}}>保存</Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Chart ── */
+function ChartView(p){
+  var canvasRef=useRef(null),instRef=useRef(null);
+  var t=THEMES[p.theme];
+  var colors=[t.primary,t.secondary,t.accent,t.tertiary,"#95a5a6","#e67e22"];
+  var fmtV=useCallback(function(v){var n=parseFloat(v);if(isNaN(n))return String(v);if(Math.abs(n)>=1000)return n.toLocaleString("zh-CN",{maximumFractionDigits:1});return String(parseFloat(n.toFixed(2)));},[]); 
+
+  useEffect(function(){
+    var canvas=canvasRef.current;
+    if(!canvas||!window.Chart)return;
+    if(instRef.current){instRef.current.destroy();instRef.current=null;}
+    var xFont={family:p.cnFont,size:p.xSize};
+    var yFont={family:p.enFont,size:p.ySize};
+    var gc=p.showGrid?"#e5e7eb":"transparent";
+    var ad=p.showAxis,lc="#374151";
+    var yLabel=p.dstUnit?"（"+p.dstUnit+"）":"";
+    var xSc={grid:{color:gc},ticks:{display:ad,color:lc,font:xFont},border:{display:ad,color:"#d1d5db"}};
+    var ySc={grid:{color:gc},ticks:{display:ad,color:lc,font:yFont,callback:fmtV},border:{display:ad,color:"#d1d5db"},title:{display:!!(p.dstUnit&&ad),text:yLabel,color:"#9ca3af",font:{size:10}}};
+    var useD=p.externalData||SAMPLE;
+    var cfg={};
+    var sl0=p.showLabels0!==false,sl1=p.showLabels1!==false;
+    if(p.type==="bar"){
+      var db=useD.bar||SAMPLE.bar;
+      cfg={type:"bar",data:{labels:db.labels,datasets:db.datasets.map(function(s,i){return{label:s.label,data:s.data,backgroundColor:colors[i]+"dd",borderRadius:3,borderSkipped:false};})},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{backgroundColor:"#1a1a2e",titleColor:"#fff",bodyColor:"#d1d5db",padding:10,cornerRadius:6}},layout:{padding:{top:34,right:16,bottom:8,left:8}},scales:{x:xSc,y:ySc}}};
+    }else if(p.type==="line"){
+      var dl=useD.line||SAMPLE.line;
+      var xScL={grid:{color:gc},ticks:{display:ad,color:lc,font:xFont,maxRotation:45,autoSkip:false},border:{display:ad,color:"#d1d5db"}};
+      cfg={type:"line",data:{labels:dl.labels,datasets:dl.datasets.map(function(s,i){return{label:s.label,data:s.data,borderColor:colors[i],backgroundColor:colors[i]+"18",borderWidth:2,pointRadius:3,pointHoverRadius:5,pointBackgroundColor:colors[i],pointBorderColor:colors[i],fill:i===1,tension:0.35};})},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{backgroundColor:"#1a1a2e",titleColor:"#fff",bodyColor:"#d1d5db",padding:10,cornerRadius:6}},layout:{padding:{top:34,right:16,bottom:8,left:8}},scales:{x:xScL,y:ySc}}};
+    }else if(p.type==="donut"){
+      var dd=useD.donut||SAMPLE.donut;
+      cfg={type:"doughnut",data:{labels:dd.labels,datasets:[{data:dd.data,backgroundColor:colors.slice(0,dd.labels.length),borderWidth:2,borderColor:"#fff",hoverOffset:6}]},options:{responsive:true,maintainAspectRatio:false,cutout:p.chartSubtype==="pie"?"0%":"62%",plugins:{legend:{display:false},tooltip:{backgroundColor:"#1a1a2e",titleColor:"#fff",bodyColor:"#d1d5db",padding:10,cornerRadius:6}},layout:{padding:20}}};
+    }else if(p.type==="dual"){
+      var ddu=useD.dual||SAMPLE.dual;
+      var dc=DUAL_COLORS[p.theme]||{bar:"#1a3a5c",line:"#e8a838"};
+      var y1Sc={position:"right",grid:{drawOnChartArea:false},ticks:{display:ad,color:dc.line,font:yFont,callback:fmtV},border:{display:ad}};
+      cfg={type:"bar",data:{labels:ddu.labels,datasets:[{label:"销量(万件)",data:ddu.volume,backgroundColor:dc.bar,borderRadius:3,yAxisID:"y",order:2},{label:"均价",data:ddu.price,type:"line",borderColor:dc.line,backgroundColor:dc.line+"20",borderWidth:2.5,pointRadius:3,pointBackgroundColor:dc.line,pointBorderColor:dc.line,fill:false,yAxisID:"y1",order:1,tension:0.2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{backgroundColor:"#1a1a2e",titleColor:"#fff",bodyColor:"#d1d5db",padding:10,cornerRadius:6}},layout:{padding:{top:34,right:16,bottom:8,left:8}},scales:{x:xSc,y:ySc,y1:y1Sc}}};
+    }else if(p.type==="horizontal"){
+      var dh=useD.horizontal||SAMPLE.horizontal;
+      var bgs=dh.data.map(function(_,i){return i===0?colors[0]:i===dh.data.length-1?"#e5e7eb":colors[1]+"99";});
+      var xScH={grid:{color:gc},ticks:{display:ad,color:lc,font:xFont,callback:function(v){return v+"%";}},border:{display:ad,color:"#d1d5db"},min:0,max:55};
+      var yScH={grid:{color:"transparent"},ticks:{display:ad,color:lc,font:xFont},border:{display:ad}};
+      cfg={type:"bar",data:{labels:dh.labels,datasets:[{label:"毛利率(%)",data:dh.data,backgroundColor:bgs,borderRadius:3,borderSkipped:false}]},options:{responsive:true,maintainAspectRatio:false,indexAxis:"y",plugins:{legend:{display:false},tooltip:{backgroundColor:"#1a1a2e",titleColor:"#fff",bodyColor:"#d1d5db",padding:10,cornerRadius:6}},layout:{padding:{top:8,right:32,bottom:8,left:8}},scales:{x:xScH,y:yScH}}};
+    }
+    if(p.showLabels&&cfg.options){
+      if(p.type==="donut"){
+        var ddL=useD.donut||SAMPLE.donut;
+        var tot=ddL.data.reduce(function(a,b){return a+b;},0);
+        cfg.options.animation={onComplete:function(){
+          var chart=this,ctx=chart.ctx,meta=chart.getDatasetMeta(0);
+          meta.data.forEach(function(el,pi){
+            var val=ddL.data[pi];if(val==null)return;
+            var pct=((val/tot)*100).toFixed(1)+"%";
+            var mid=el.startAngle+(el.endAngle-el.startAngle)/2;
+            var r=(el.outerRadius+el.innerRadius)/2;
+            ctx.save();ctx.fillStyle="#fff";ctx.font="bold "+p.labelSize+"px "+p.enFont;
+            ctx.textAlign="center";ctx.textBaseline="middle";
+            ctx.fillText(pct,el.x+Math.cos(mid)*r,el.y+Math.sin(mid)*r);ctx.restore();
+          });
+        }};
+      }else{
+        cfg.options.animation={onComplete:function(){
+          var chart=this,ctx=chart.ctx;
+          chart.data.datasets.forEach(function(ds,di){
+            var seriesOn=di===0?sl0:sl1;if(!seriesOn)return;
+            var meta=chart.getDatasetMeta(di);if(meta.hidden)return;
+            meta.data.forEach(function(el,pi){
+              var val=ds.data[pi];if(val==null)return;
+              var k=di+"_"+pi,ps=p.pointStyles[k]||{};
+              var yOff=p.labelPos==="center"?0:p.labelPos==="below"?14:-6;
+              var pos=el.tooltipPosition?el.tooltipPosition():{x:el.x,y:el.y};
+              ctx.save();
+              if(ps.bg){ctx.font=(ps.bold?"bold ":"")+( ps.size||p.labelSize)+"px "+p.enFont;var tw=ctx.measureText(fmtV(val)).width;ctx.fillStyle=ps.bgColor||"#fef9c3";ctx.fillRect(pos.x-tw/2-3,pos.y+yOff-(ps.size||p.labelSize)-2,tw+6,(ps.size||p.labelSize)+4);}
+              ctx.fillStyle=ps.color||lc;ctx.font=(ps.bold?"bold ":"")+( ps.size||p.labelSize)+"px "+p.enFont;
+              ctx.textAlign="center";ctx.textBaseline=p.labelPos==="below"?"top":"bottom";
+              ctx.fillText(fmtV(val),pos.x,pos.y+yOff);ctx.restore();
+            });
+          });
+        }};
+      }
+    }
+    instRef.current=new window.Chart(canvas,cfg);
+    return function(){if(instRef.current){instRef.current.destroy();instRef.current=null;}};
+  },[p.type,p.theme,p.cnFont,p.enFont,p.xSize,p.ySize,p.labelSize,p.showGrid,p.showLabels,p.showLabels0,p.showLabels1,p.labelPos,p.showAxis,p.dstUnit,p.externalData,p.pointStyles,p.chartSubtype,fmtV]);
+
+  function renderLegend(){
+    if(!p.showLegend)return null;
+    var useD=p.externalData||SAMPLE;
+    if(p.type==="donut"){var d=useD.donut||SAMPLE.donut;return <div style={{display:"flex",flexWrap:"wrap",gap:10,marginTop:8}}>{d.labels.map(function(l,i){return <span key={l} style={{display:"flex",alignItems:"center",gap:5,fontSize:12,color:"#6b7280"}}><span style={{width:10,height:10,borderRadius:2,background:colors[i],display:"inline-block"}}/>{l} {d.data[i]}%</span>;})}</div>;}
+    if(p.type==="dual"){var dc2=DUAL_COLORS[p.theme]||{bar:"#1a3a5c",line:"#e8a838"};return <div style={{display:"flex",gap:16,marginTop:8}}><span style={{display:"flex",alignItems:"center",gap:5,fontSize:12,color:"#6b7280"}}><span style={{width:10,height:10,borderRadius:2,background:dc2.bar,display:"inline-block"}}/>销量(万件)</span><span style={{display:"flex",alignItems:"center",gap:5,fontSize:12,color:"#6b7280"}}><span style={{width:22,height:3,background:dc2.line,display:"inline-block",borderRadius:2}}/>均价</span></div>;}
+    var src=useD[p.type]||SAMPLE[p.type];var ds=src?src.datasets:[];
+    if(ds&&ds.length)return <div style={{display:"flex",flexWrap:"wrap",gap:12,marginTop:8}}>{ds.map(function(s,i){return <span key={s.label} style={{display:"flex",alignItems:"center",gap:5,fontSize:12,color:"#6b7280"}}>{p.type==="line"?<span style={{width:22,height:3,background:colors[i],display:"inline-block",borderRadius:2}}/>:<span style={{width:10,height:10,borderRadius:2,background:colors[i],display:"inline-block"}}/>}{s.label}</span>;})}</div>;
+    return null;
+  }
+  return(
+    <div>
+      {p.showLegend&&p.legendPos==="top"&&renderLegend()}
+      <div style={{position:"relative",width:"100%",height:320}}><canvas ref={canvasRef}/></div>
+      {p.showLegend&&p.legendPos!=="top"&&renderLegend()}
+    </div>
+  );
+}
+
+/* ── AI Analysis Panel ── */
+function AnalysisPanel(p){
+  var stateA=useState(null),stateL=useState(false),stateC=useState(false),stateP=useState(0),stateT=useState("");
+  var analysis=stateA[0],setAnalysis=stateA[1];
+  var loading=stateL[0],setLoading=stateL[1];
+  var copied=stateC[0],setCopied=stateC[1];
+  var progress=stateP[0],setProgress=stateP[1];
+  var typeText=stateT[0],setTypeText=stateT[1];
+  var t=THEMES[p.theme];
+  var ac=t.primary;
+
+  function extractData(){
+    var useD=p.externalData||SAMPLE,unit=p.dstUnit||"百万元";
+    if(p.tplId==="bar"){
+      var d=useD.bar||SAMPLE.bar,rev=d.datasets[0]&&d.datasets[0].data,cost=d.datasets[1]&&d.datasets[1].data,profit=d.datasets[2]&&d.datasets[2].data,n=rev&&rev.length;
+      if(!rev||!profit)return null;
+      return{type:"bar",labels:d.labels,rev:rev,profit:profit,cost:cost,unit:unit,
+        revGrowth:n>=2?(((rev[n-1]-rev[n-2])/rev[n-2])*100).toFixed(1):null,
+        profitGrowth:n>=2&&profit[n-2]>0?(((profit[n-1]-profit[n-2])/profit[n-2])*100).toFixed(1):null,
+        margin:(profit[n-1]&&rev[n-1])?((profit[n-1]/rev[n-1])*100).toFixed(1):null,
+        prevMargin:n>=2&&profit[n-2]&&rev[n-2]?((profit[n-2]/rev[n-2])*100).toFixed(1):null,
+        costRatio:cost&&cost[n-1]&&rev[n-1]?((cost[n-1]/rev[n-1])*100).toFixed(1):null};
+    }
+    if(p.tplId==="line"){
+      var d2=useD.line||SAMPLE.line,ds0=d2.datasets[0]&&d2.datasets[0].data,ds1=d2.datasets[1]&&d2.datasets[1].data,n2=ds0&&ds0.length;
+      return{type:"line",labels:d2.labels,series0:d2.datasets[0]&&d2.datasets[0].label,series1:d2.datasets[1]&&d2.datasets[1].label,ds0:ds0,ds1:ds1,latestGrowth:ds0&&ds0[n2-1],latestMargin:ds1&&ds1[n2-1],trend:ds0&&n2>=3?(ds0[n2-1]>ds0[n2-3]?"上行":"下行"):"震荡"};
+    }
+    if(p.tplId==="dual"){
+      var d3=useD.dual||SAMPLE.dual,vol=d3.volume,price=d3.price,n3=vol&&vol.length;
+      return{type:"dual",labels:d3.labels,vol:vol,price:price,volGrowth:n3>=2?(((vol[n3-1]-vol[n3-2])/vol[n3-2])*100).toFixed(1):null,priceGrowth:n3>=2?(((price[n3-1]-price[n3-2])/price[n3-2])*100).toFixed(1):null};
+    }
+    if(p.tplId==="horizontal"){
+      var d4=useD.horizontal||SAMPLE.horizontal,top=d4.data[0],avg=d4.data[d4.data.length-1];
+      return{type:"horizontal",labels:d4.labels,data:d4.data,top:top,avg:avg,spread:top&&avg?(top-avg).toFixed(1):null};
+    }
+    if(p.tplId==="donut"){
+      var d5=useD.donut||SAMPLE.donut,maxIdx=0;
+      d5.data.forEach(function(v,i){if(v>d5.data[maxIdx])maxIdx=i;});
+      return{type:"donut",labels:d5.labels,data:d5.data,topLabel:d5.labels[maxIdx],topVal:d5.data[maxIdx]};
+    }
+    return null;
+  }
+
+  function buildPrompt(info){
+    var base="你是顶级券商首席行业分析师。请基于以下数据生成3-5条专业分析观点。每条格式：【小标题（4-6字）】正文（2-3句，使用边际改善、基数效应、利润空间承压、量价齐升等专业表达）。条目间空行，不要编号，不要开场白。\n\n数据：\n";
+    if(info.type==="bar")return base+"年份："+info.labels.join("、")+"\n营业收入："+info.rev.join("、")+"（"+info.unit+"）\n净利润："+info.profit.join("、")+"（"+info.unit+"）\n收入同比："+info.revGrowth+"%，净利润同比："+info.profitGrowth+"%，净利率："+info.margin+"%（上期"+info.prevMargin+"%），成本占比："+info.costRatio+"%";
+    if(info.type==="line")return base+info.series0+"："+info.ds0.join("、")+"%\n"+info.series1+"："+info.ds1.join("、")+"%\n趋势："+info.trend+"，最新"+info.series0+"："+info.latestGrowth+"%，"+info.series1+"："+info.latestMargin+"%";
+    if(info.type==="dual")return base+"销量："+info.vol.join("、")+"万件（同比"+info.volGrowth+"%）\n均价："+info.price.join("、")+"元（同比"+info.priceGrowth+"%）";
+    if(info.type==="horizontal")return base+"企业："+info.labels.join("、")+"\n毛利率："+info.data.join("、")+"%\n本司"+info.top+"%，行业均值"+info.avg+"%，超均"+info.spread+"pct";
+    if(info.type==="donut")return base+"区域/产品："+info.labels.join("、")+"\n占比："+info.data.join("、")+"%\n最大贡献："+info.topLabel+"（"+info.topVal+"%）";
+    return base;
+  }
+
+  function parsePoints(text){
+    var blocks=text.split(/\n\n+/).filter(function(b){return b.trim();});
+    return blocks.map(function(block){
+      var m=block.match(/^[「【]?(.{2,8})[」】：:]\s*([\s\S]+)/);
+      if(m)return{title:m[1].trim(),body:m[2].trim()};
+      return{title:"分析要点",body:block.trim()};
+    });
+  }
+
+  /* 打字机逐字动画 */
+  function typewriterAnimate(points){
+    setAnalysis(points.map(function(pt){return{title:pt.title,body:""};}) );
+    var idx=0,charIdx=0;
+    function tick(){
+      if(idx>=points.length){return;}
+      var target=points[idx].body;
+      if(charIdx<target.length){
+        charIdx++;
+        setAnalysis(function(prev){
+          var next=prev.map(function(item,i){
+            if(i<idx)return item;
+            if(i===idx)return{title:item.title,body:target.slice(0,charIdx)};
+            return{title:points[i].title,body:""};
+          });
+          return next;
+        });
+        setTimeout(tick,18);
+      }else{
+        idx++;charIdx=0;
+        if(idx<points.length)setTimeout(tick,120);
+      }
+    }
+    tick();
+  }
+
+  async function handleGenerate(){
+    var info=extractData();
+    if(!info){setAnalysis([{title:"提示",body:"暂无可分析的图表数据，请先选择图表模板。"}]);return;}
+    setLoading(true);setAnalysis(null);setProgress(0);
+    var prompt=buildPrompt(info);
+    var apiKey=localStorage.getItem("ds_api_key")||"";
+
+    /* 进度动画 */
+    var start=Date.now(),dur=apiKey?4000:2200;
+    var timer=setInterval(function(){
+      var p2=Math.min(92,Math.round(((Date.now()-start)/dur)*100));
+      setProgress(p2);
+    },80);
+
+    try{
+      var points;
+      if(apiKey){
+        /* ── 真实 DeepSeek API 调用 ── */
+        var resp=await fetch("https://api.deepseek.com/chat/completions",{
+          method:"POST",
+          headers:{"Content-Type":"application/json","Authorization":"Bearer "+apiKey},
+          body:JSON.stringify({
+            model:"deepseek-chat",
+            messages:[{role:"system",content:"你是顶级券商首席行业分析师，语言专业精炼。"},{role:"user",content:prompt}],
+            max_tokens:1200,
+            temperature:0.7,
+            stream:false
+          })
+        });
+        if(!resp.ok)throw new Error("API返回错误: "+resp.status);
+        var data=await resp.json();
+        var text=data.choices&&data.choices[0]&&data.choices[0].message&&data.choices[0].message.content;
+        if(!text)throw new Error("API返回内容为空");
+        points=parsePoints(text);
+      }else{
+        /* ── Mock 降级（未配置 Key 时）── */
+        await new Promise(function(res){setTimeout(res,dur);});
+        points=getMockPoints(info);
+      }
+      clearInterval(timer);setProgress(100);
+      setTimeout(function(){setLoading(false);typewriterAnimate(points);},300);
+    }catch(err){
+      clearInterval(timer);setLoading(false);setProgress(0);
+      setAnalysis([{title:"调用失败",body:"错误："+err.message+"。请检查 API Key 是否正确，或参考跨域说明使用正确的浏览器模式。"}]);
+    }
+  }
+
+  function getMockPoints(info){
+    var pools={
+      bar:[
+        {title:"营收增长动能",body:"最新期营业收入同比增长"+info.revGrowth+"%，增长动能持续释放，规模效应逐步显现。结合历史数据走势，收入端增长斜率较为稳健，内生增长逻辑清晰，尚未出现明显边际放缓信号。"},
+        {title:"盈利能力改善",body:"净利润同比增速达"+info.profitGrowth+"%，净利率由"+info.prevMargin+"%提升至"+info.margin+"%，盈利能力边际改善趋势明确。利润增速持续快于收入增速，经营杠杆效应正在有效释放。"},
+        {title:"成本管控压力",body:"营业成本占收入比重为"+info.costRatio+"%，成本端压力仍需关注。若原材料价格出现超预期上升，毛利率存在进一步压缩的风险，建议持续跟踪季度毛利率变化。"},
+        {title:"盈利质量评估",body:"收入与利润双增态势印证公司核心竞争力稳固，盈利质量处于行业中上水平。在需求侧未出现显著恶化的前提下，全年业绩完成度具备较高确定性，基本面支撑估值底部相对扎实。"},
+        {title:"前景展望",body:"综合当前增长斜率及成本结构，公司中期业绩具备较强能见度。需重点关注宏观需求波动及竞争格局变化，建议维持积极关注评级。"},
+      ],
+      line:[
+        {title:"趋势研判",body:info.series0+"最新读数"+info.latestGrowth+"%，近期呈"+info.trend+"态势。结合行业景气周期综合研判，当前所处位置"+(info.trend==="上行"?"处于修复通道，上行动能边际增强":"存在一定压力，需密切跟踪领先指标变化")+。"},
+        {title:"盈利质量稳健",body:info.series1+"维持在"+info.latestMargin+"%区间，短期受基数效应影响，同比读数或存在波动，但中枢水平相对稳健。"},
+        {title:"拐点信号识别",body:"量化指标显示核心数据走势"+info.trend+"，若后续数据验证当前趋势，则增长预期差有望得到修复，建议结合月度高频数据提前布局。"},
+        {title:"中期配置价值",body:"量化趋势与基本面逻辑相互印证，内生增长确定性较强，短期波动不改中期向好判断，当前位置具备较高风险收益比。"},
+      ],
+      dual:[
+        {title:"量价共振确立",body:"销量同比"+info.volGrowth+"%、均价同比"+info.priceGrowth+"%，量价双升格局确立，共振支撑营收超预期增长，印证公司市场扩张与定价能力的双重提升。"},
+        {title:"定价能力研判",body:parseFloat(info.priceGrowth)>0?"均价持续提升印证公司具备较强的产品溢价能力，高端化战略初见成效，价格弹性有望成为利润率改善的持续驱动力。":"均价承压背景下，销量增长部分对冲价格下滑风险，短期量增价跌格局延续，关注均价企稳回升的时间节点。"},
+        {title:"市场份额扩张",body:"销量增速"+info.volGrowth+"%显示市场份额扩张态势良好，渠道渗透率提升与客户结构优化策略执行效果初步显现，规模效应有望进一步释放。"},
+        {title:"综合经营评价",body:"量价趋势综合来看，公司经营质量持续改善，主业竞争力边际增强。建议重点关注均价走势持续性，量价齐升若能持续确认，将显著提升全年盈利预测上调可能性。"},
+      ],
+      horizontal:[
+        {title:"行业领先优势",body:"公司毛利率"+info.top+"%，超行业均值"+info.spread+"个百分点，在同业梯队中处于领先位置，盈利能力的持续超额印证公司构建了较深的竞争壁垒。"},
+        {title:"护城河评估",body:"超均值"+info.spread+"pct的毛利率溢价，反映公司在技术壁垒、品牌溢价或供应链效率上存在结构性优势，这类优势具备一定粘性，短期内难以被快速复制。"},
+        {title:"行业竞争格局",body:"行业毛利率分化明显，头部效应突出。需关注竞争加剧对行业整体盈利能力的潜在压缩，以及本司优势维持的可持续性。"},
+        {title:"中长期配置逻辑",body:"公司当前盈利能力溢价具备较强可持续性，穿越行业波动的能力突出，中长期配置价值凸显，建议维持超配评级。"},
+      ],
+      donut:[
+        {title:"核心市场韧性",body:info.topLabel+"贡献占比"+info.topVal+"%，核心市场地位稳固，短期业绩稳定性较强。建议持续跟踪该区域份额变动趋势，若出现边际收缩需重新评估集中度风险溢价。"},
+        {title:"集中度风险审视",body:"当前收入结构呈现一定集中度，单一市场依赖度较高，若核心区域出现需求下滑或竞争加剧，对整体业绩的传导效应较为直接。"},
+        {title:"多元化布局进展",body:"非核心区域合计占比约"+Math.round(100-parseFloat(info.topVal))+"%，多元化布局初具雏形，有助于平滑单一市场波动，第二增长曲线培育价值值得关注。"},
+        {title:"结构优化方向",body:"综合结构分析，公司收入质量稳健，战略布局清晰度较高。建议关注新兴市场增量贡献趋势，若占比持续提升，将有效改善整体收入结构。"},
+      ],
+    };
+    return pools[info.type]||[{title:"分析提示",body:"暂无针对此图表类型的分析模板。"}];
+  }
+
+  function handleCopy(){
+    if(!analysis)return;
+    var text=analysis.map(function(pt,i){return (i+1)+". "+pt.title+"\n"+pt.body;}).join("\n\n");
+    navigator.clipboard&&navigator.clipboard.writeText(text).then(function(){setCopied(true);setTimeout(function(){setCopied(false);},2000);});
+  }
+
+  return(
+    <div style={{background:"#fff",borderRadius:12,border:"1px solid #e5e7eb",padding:"20px 22px",marginTop:16}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <div style={{width:3,height:18,borderRadius:2,background:ac}}/>
+          <span style={{fontSize:14,fontWeight:700,color:"#1a1a2e",letterSpacing:".02em"}}>智能分析观点</span>
+          <span style={{fontSize:10,background:ac,color:"#fff",padding:"2px 7px",borderRadius:20,fontWeight:600,letterSpacing:".04em"}}>AI</span>
+        </div>
+        <button onClick={handleGenerate} disabled={loading} style={{padding:"7px 18px",borderRadius:8,border:"none",background:loading?"#f3f4f6":ac,color:loading?"#9ca3af":"#fff",fontSize:12,fontWeight:600,cursor:loading?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:7}}>
+          {loading?<span style={{display:"flex",gap:3}}>{[0,1,2].map(function(i){return <span key={i} style={{width:5,height:5,borderRadius:"50%",background:"#9ca3af",display:"inline-block",animation:"pulse 1.2s ease-in-out infinite",animationDelay:(i*0.2)+"s"}}/>;})}</span>:<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z"/></svg>}
+          {loading?"分析中":"生成深度分析"}
+        </button>
+      </div>
+
+      {loading&&(
+        <div style={{marginBottom:16}}>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:5,fontSize:11,color:"#9ca3af"}}>
+            <span>{localStorage.getItem("ds_api_key")?"正在调用 DeepSeek API 生成专业观点…":"正在生成示例分析观点…"}</span>
+            <span>{progress}%</span>
+          </div>
+          <div style={{height:4,borderRadius:4,background:"#f3f4f6",overflow:"hidden"}}>
+            <div style={{height:"100%",width:progress+"%",borderRadius:4,background:"linear-gradient(90deg,"+ac+","+ac+"99)",transition:"width .1s linear"}}/>
+          </div>
+          <div style={{marginTop:14,display:"flex",flexDirection:"column",gap:10}}>
+            {[100,85,100,70,90].map(function(w,i){return <div key={i} style={{height:13,borderRadius:4,width:w+"%",background:"linear-gradient(90deg,#f3f4f6 25%,#ebebeb 50%,#f3f4f6 75%)",backgroundSize:"400px 100%",animation:"shimmer 1.4s infinite",animationDelay:(i*0.12)+"s"}}/>;}) }
+          </div>
+        </div>
+      )}
+
+      {!analysis&&!loading&&(
+        <div style={{padding:"28px 0",textAlign:"center"}}>
+          <div style={{width:44,height:44,borderRadius:12,background:ac+"10",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 10px"}}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={ac} strokeWidth="1.8"><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z"/></svg>
+          </div>
+          <div style={{fontSize:13,color:"#374151",fontWeight:500,marginBottom:4}}>券商级别深度分析</div>
+          <div style={{fontSize:12,color:"#9ca3af"}}>{localStorage.getItem("ds_api_key")?"已配置 API Key，将使用 DeepSeek 生成真实分析":"点击按钮生成示例分析（配置 API Key 后可获得真实 AI 分析）"}</div>
+        </div>
+      )}
+
+      {analysis&&!loading&&(
+        <div>
+          <div style={{display:"flex",flexDirection:"column",gap:12,marginBottom:16}}>
+            {analysis.map(function(pt,i){return(
+              <div key={i} className="ai-point" style={{background:i===0?ac+"06":"#fafafa",borderRadius:10,padding:"13px 15px",borderLeft:"3px solid "+(i===0?ac:ac+"40")}}>
+                <div style={{fontSize:12,fontWeight:700,color:ac,marginBottom:5,letterSpacing:".02em"}}>{pt.title}</div>
+                <div style={{fontSize:13,color:"#374151",lineHeight:1.8}}>{pt.body}</div>
+              </div>
+            );})}
+          </div>
+          <div style={{borderTop:"1px solid #f0f0f0",paddingTop:12,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+            <span style={{fontSize:11,color:"#c0c0c0"}}>{localStorage.getItem("ds_api_key")?"DeepSeek AI 生成 · 仅供参考":"示例数据生成 · 配置 API Key 获取真实分析"}</span>
+            <button onClick={handleCopy} style={{padding:"5px 14px",borderRadius:8,border:"1px solid "+(copied?ac:"#e5e7eb"),background:copied?ac+"10":"#fff",color:copied?ac:"#6b7280",fontSize:12,fontWeight:500,cursor:"pointer",display:"flex",alignItems:"center",gap:5,transition:"all .2s"}}>
+              {copied?<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>}
+              {copied?"已复制":"复制到报告"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── PointStylePanel ── */
+function PointStylePanel(p){
+  var selS=useState(null);var sel=selS[0],setSel=selS[1];
+  var useD=p.externalData||SAMPLE;
+  function getLabels(){if(p.chartType==="bar"||p.chartType==="line"){var s=useD[p.chartType]||SAMPLE[p.chartType];return s?s.labels:[];}if(p.chartType==="donut"){var sd=useD.donut||SAMPLE.donut;return sd?sd.labels:[];}if(p.chartType==="horizontal"){var sh=useD.horizontal||SAMPLE.horizontal;return sh?sh.labels:[];}if(p.chartType==="dual"){var sdu=useD.dual||SAMPLE.dual;return sdu?sdu.labels:[];}return [];}
+  function getDatasets(){if(p.chartType==="bar"||p.chartType==="line"){var s=useD[p.chartType]||SAMPLE[p.chartType];return s?s.datasets:[];}if(p.chartType==="donut"){var sd=useD.donut||SAMPLE.donut;return sd?[{label:"占比",data:sd.data}]:[];}if(p.chartType==="horizontal"){var sh=useD.horizontal||SAMPLE.horizontal;return sh?[{label:"数值",data:sh.data}]:[];}if(p.chartType==="dual"){var sdu=useD.dual||SAMPLE.dual;return sdu?[{label:"销量",data:sdu.volume},{label:"均价",data:sdu.price}]:[];}return [];}
+  var labels=getLabels(),datasets=getDatasets();
+  var styleKey=sel?(sel.dsIdx+"_"+sel.ptIdx):null;
+  var curStyle=styleKey?(p.pointStyles[styleKey]||{}):{};
+  function update(key,val){if(!styleKey)return;var next=Object.assign({},p.pointStyles);next[styleKey]=Object.assign({},curStyle);next[styleKey][key]=val;p.onUpdate(next);}
+  return(
+    <div>
+      <div style={{fontSize:11,color:"#9ca3af",marginBottom:8}}>选择数据点单独设置样式</div>
+      <div style={{maxHeight:150,overflowY:"auto",border:"1px solid #e5e7eb",borderRadius:8,marginBottom:12}}>
+        {datasets.map(function(ds,di){return <div key={di}><div style={{padding:"4px 10px",background:"#f9fafb",fontSize:11,fontWeight:600,color:"#6b7280",borderBottom:"0.5px solid #f0f0f0"}}>{ds.label}</div><div style={{display:"flex",flexWrap:"wrap",gap:4,padding:"6px 8px"}}>{labels.map(function(lbl,pi){var k=di+"_"+pi,isSel=sel&&sel.dsIdx===di&&sel.ptIdx===pi,hasStyle=p.pointStyles[k]&&Object.keys(p.pointStyles[k]).length>0;return <div key={pi} onClick={function(){setSel({dsIdx:di,ptIdx:pi});}} style={{padding:"3px 8px",borderRadius:20,border:"1.5px solid "+(isSel?"#1a3a5c":hasStyle?"#7db8dc":"#e5e7eb"),background:isSel?"#1a3a5c10":hasStyle?"#eff6ff":"#fff",cursor:"pointer",fontSize:11,color:isSel?"#1a3a5c":"#374151"}}>{hasStyle&&!isSel&&<span style={{color:"#3b82f6",marginRight:2}}>●</span>}{lbl}</div>;})} </div></div>;})}
+      </div>
+      {sel?(<div style={{background:"#f9fafb",borderRadius:8,padding:"12px",border:"1px solid #e5e7eb"}}>
+        <div style={{fontSize:12,fontWeight:600,color:"#1a1a2e",marginBottom:10}}>{datasets[sel.dsIdx]&&datasets[sel.dsIdx].label} · {labels[sel.ptIdx]}</div>
+        <div style={{display:"flex",flexDirection:"column",gap:9}}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:12,color:"#374151",width:52,flexShrink:0}}>字体颜色</span><input type="color" value={curStyle.color||"#374151"} onChange={function(e){update("color",e.target.value);}} style={{width:32,height:24,border:"1px solid #e5e7eb",borderRadius:4,padding:0}}/>{curStyle.color&&<span onClick={function(){update("color",undefined);}} style={{fontSize:11,color:"#ef4444",cursor:"pointer"}}>×重置</span>}</div>
+          <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:12,color:"#374151",width:52,flexShrink:0}}>字体大小</span><input type="range" min="9" max="22" step="1" value={curStyle.size||12} onChange={function(e){update("size",Number(e.target.value));}} style={{flex:1}}/><span style={{fontSize:12,fontWeight:500,color:"#374151",minWidth:28}}>{curStyle.size||12}px</span></div>
+          <Tog label="加粗" value={!!curStyle.bold} onChange={function(v){update("bold",v);}} color="#1a3a5c"/>
+          <Tog label="高亮背景" value={!!curStyle.bg} onChange={function(v){update("bg",v);}} color="#1a3a5c"/>
+          {curStyle.bg&&<div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:12,color:"#374151",width:52,flexShrink:0}}>背景色</span><input type="color" value={curStyle.bgColor||"#fef9c3"} onChange={function(e){update("bgColor",e.target.value);}} style={{width:32,height:24,border:"1px solid #e5e7eb",borderRadius:4,padding:0}}/></div>}
+        </div>
+        <button onClick={function(){var next=Object.assign({},p.pointStyles);next[styleKey]={};p.onUpdate(next);setSel(null);}} style={{marginTop:10,fontSize:11,color:"#ef4444",background:"none",border:"none",cursor:"pointer",padding:0}}>清除此数据点样式</button>
+      </div>):<div style={{fontSize:11,color:"#9ca3af",textAlign:"center",padding:"8px 0"}}>点击上方数据点进行单独设置</div>}
+    </div>
+  );
+}
+
+/* ── DataConfigWizard ── */
+function DataConfigWizard(p){
+  var selRowsS=useState([]),selColsS=useState([]);
+  var selRows=selRowsS[0],setSelRows=selRowsS[1];
+  var selCols=selColsS[0],setSelCols=selColsS[1];
+  var orientS=useState("rowAsX"),stepS=useState(1),previewS=useState(null);
+  var orient=orientS[0],setOrient=orientS[1];
+  var step=stepS[0],setStep=stepS[1];
+  var preview=previewS[0],setPreview=previewS[1];
+  var srcUnitS=useState("元"),dstUnitS=useState("元"),autoS=useState(false);
+  var srcUnit=srcUnitS[0],setSrcUnit=srcUnitS[1];
+  var dstUnit=dstUnitS[0],setDstUnit=dstUnitS[1];
+  var setAuto=autoS[1];
+  var PRI=THEMES.goldman.primary;
+  function toggleRow(r){setSelRows(function(prev){return prev.includes(r)?prev.filter(function(x){return x!==r;}):[].concat(prev,[r]).sort(function(a,b){return a-b;});});}
+  function toggleCol(c){setSelCols(function(prev){return prev.includes(c)?prev.filter(function(x){return x!==c;}):[].concat(prev,[c]).sort(function(a,b){return a-b;});});}
+  function autoDetect(rows,cols){var fcn=rows.slice(1).filter(function(r){return isNaN(parseFloat(p.rawData[r]&&p.rawData[r][cols[0]]));}).length;var frn=cols.slice(1).filter(function(c){return isNaN(parseFloat(p.rawData[rows[0]]&&p.rawData[rows[0]][c]));}).length;return fcn>=frn?"rowAsX":"colAsX";}
+  function goStep2(){setOrient(autoDetect(selRows,selCols));setStep(2);}
+  function goStep3(){var nums=[];selRows.slice(1).forEach(function(r){selCols.slice(1).forEach(function(c){var v=parseFloat(p.rawData[r]&&p.rawData[r][c]);if(!isNaN(v))nums.push(v);});});if(nums.length){var d=detectUnit(nums);setSrcUnit(d);setDstUnit(d);setAuto(true);}setStep(3);}
+  function buildPreview(){var ratio=UNIT_FACTORS[srcUnit]/UNIT_FACTORS[dstUnit];var labels=[],datasets=[];if(orient==="rowAsX"){labels=selCols.slice(1).map(function(c){return String((p.rawData[selRows[0]]&&p.rawData[selRows[0]][c])||"");});datasets=selRows.slice(1).map(function(r){return{label:String((p.rawData[r]&&p.rawData[r][selCols[0]])||("行"+(r+1))),data:selCols.slice(1).map(function(c){var v=parseFloat(p.rawData[r]&&p.rawData[r][c]);return isNaN(v)?0:parseFloat((v*ratio).toFixed(6));})};});}else{labels=selRows.slice(1).map(function(r){return String((p.rawData[r]&&p.rawData[r][selCols[0]])||"");});datasets=selCols.slice(1).map(function(c){return{label:String((p.rawData[selRows[0]]&&p.rawData[selRows[0]][c])||("列"+(c+1))),data:selRows.slice(1).map(function(r){var v=parseFloat(p.rawData[r]&&p.rawData[r][c]);return isNaN(v)?0:parseFloat((v*ratio).toFixed(6));})};});}setPreview({labels:labels,datasets:datasets});}
+  useEffect(function(){if(step===3)buildPreview();},[step,srcUnit,dstUnit,orient]);
+  var stepLabels=["选择数据范围","确认坐标轴与系列","单位换算"];
+  return(
+    <div style={{background:"#fff",borderRadius:12,border:"1px solid #e5e7eb",padding:"20px 22px",marginTop:12}}>
+      <div style={{display:"flex",alignItems:"center",marginBottom:20}}>
+        {stepLabels.map(function(s,i){return <div key={s} style={{display:"flex",alignItems:"center"}}><div style={{display:"flex",alignItems:"center",gap:6,padding:"4px 10px",borderRadius:20,background:step===i+1?PRI+"10":"transparent"}}><div style={{width:22,height:22,borderRadius:11,background:step>i?PRI:"#e5e7eb",color:"#fff",fontSize:12,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{step>i+1?"✓":i+1}</div><span style={{fontSize:13,fontWeight:step===i+1?600:400,color:step===i+1?PRI:"#6b7280",whiteSpace:"nowrap"}}>{s}</span></div>{i<2&&<div style={{width:20,height:1,background:"#e5e7eb",flexShrink:0}}/>}</div>;})}
+      </div>
+      {step===1&&(<div>
+        <div style={{fontSize:14,fontWeight:600,color:"#1a1a2e",marginBottom:4}}>选择要用到的数据范围</div>
+        <div style={{fontSize:12,color:"#6b7280",marginBottom:12}}>点击<b>列标题</b>选/取消整列，点击<b>行标题</b>选/取消整行。</div>
+        <div style={{overflowX:"auto",maxHeight:260,overflowY:"auto",border:"1px solid #e5e7eb",borderRadius:8,marginBottom:12}}>
+          <table style={{borderCollapse:"collapse",fontSize:12,minWidth:"100%"}}>
+            <thead><tr><th style={{padding:"6px 10px",background:"#f3f4f6",borderBottom:"1px solid #e5e7eb",borderRight:"1px solid #e5e7eb",color:"#9ca3af",fontSize:11}}>行\列</th>{p.rawData[0]&&p.rawData[0].map(function(_,c){return <th key={c} onClick={function(){toggleCol(c);}} style={{padding:"6px 12px",background:selCols.includes(c)?"#dbeafe":"#f9fafb",borderBottom:"1px solid #e5e7eb",borderRight:"0.5px solid #f0f0f0",cursor:"pointer",color:selCols.includes(c)?"#1d4ed8":"#6b7280",fontWeight:selCols.includes(c)?600:400,userSelect:"none",whiteSpace:"nowrap"}}>{String((p.rawData[0][c])||("列"+(c+1))).slice(0,10)}</th>;})}</tr></thead>
+            <tbody>{p.rawData.map(function(row,r){return <tr key={r}><td onClick={function(){toggleRow(r);}} style={{padding:"5px 10px",background:selRows.includes(r)?"#dbeafe":"#f9fafb",borderBottom:"0.5px solid #f0f0f0",borderRight:"1px solid #e5e7eb",cursor:"pointer",color:selRows.includes(r)?"#1d4ed8":"#6b7280",fontWeight:selRows.includes(r)?600:400,userSelect:"none",fontSize:11}}>{r===0?"标题行":("第"+r+"行")}</td>{row.map(function(cell,c){return <td key={c} style={{padding:"5px 12px",borderBottom:"0.5px solid #f0f0f0",borderRight:"0.5px solid #f0f0f0",color:"#374151",background:(selRows.includes(r)&&selCols.includes(c))?"#eff6ff":"#fff"}}>{String(cell==null?"":cell)}</td>;})}</tr>;})} </tbody>
+          </table>
+        </div>
+        <div style={{fontSize:12,color:"#6b7280",marginBottom:12}}>已选 <b style={{color:PRI}}>{selRows.length}</b> 行 · <b style={{color:PRI}}>{selCols.length}</b> 列</div>
+        <div style={{display:"flex",gap:8}}><Btn onClick={p.onCancel}>取消</Btn><Btn onClick={goStep2} disabled={selRows.length<2||selCols.length<2} style={{background:PRI,color:"#fff",border:"none"}}>下一步 →</Btn></div>
+      </div>)}
+      {step===2&&(function(){
+        var xLabels=orient==="rowAsX"?selCols.slice(1).map(function(c){return String((p.rawData[selRows[0]]&&p.rawData[selRows[0]][c])||"");}):selRows.slice(1).map(function(r){return String((p.rawData[r]&&p.rawData[r][selCols[0]])||"");});
+        var seriesNames=orient==="rowAsX"?selRows.slice(1).map(function(r){return String((p.rawData[r]&&p.rawData[r][selCols[0]])||"");}):selCols.slice(1).map(function(c){return String((p.rawData[selRows[0]]&&p.rawData[selRows[0]][c])||"");});
+        var corner=String((p.rawData[selRows[0]]&&p.rawData[selRows[0]][selCols[0]])||"");
+        return(<div>
+          <div style={{fontSize:14,fontWeight:600,color:"#1a1a2e",marginBottom:4}}>确认坐标轴与系列</div>
+          <div style={{fontSize:12,color:"#6b7280",marginBottom:14}}>系统已自动推断布局，请确认或点击互换。</div>
+          <div style={{overflowX:"auto",maxHeight:200,overflowY:"auto",border:"1px solid #e5e7eb",borderRadius:8,marginBottom:14}}>
+            <table style={{borderCollapse:"collapse",fontSize:12,minWidth:"100%"}}>
+              <thead><tr><th style={{padding:"6px 10px",background:"#f0fdf4",borderBottom:"1px solid #e5e7eb",borderRight:"1px solid #e5e7eb",color:"#065f46",fontSize:11,fontWeight:600,whiteSpace:"nowrap"}}>{corner}</th>{xLabels.map(function(lbl,i){return <th key={i} style={{padding:"6px 12px",background:"#eff6ff",borderBottom:"1px solid #e5e7eb",borderRight:"0.5px solid #e5e7eb",color:"#1d4ed8",fontWeight:600,whiteSpace:"nowrap",fontSize:12}}>{lbl}</th>;})}</tr></thead>
+              <tbody>{seriesNames.map(function(name,si){var dataVals=orient==="rowAsX"?selCols.slice(1).map(function(c){return p.rawData[selRows[si+1]]&&p.rawData[selRows[si+1]][c];}):selRows.slice(1).map(function(r){return p.rawData[r]&&p.rawData[r][selCols[si+1]];});return <tr key={si}><td style={{padding:"5px 10px",background:"#f0fdf4",borderBottom:"0.5px solid #f0f0f0",borderRight:"1px solid #e5e7eb",color:"#065f46",fontWeight:600,whiteSpace:"nowrap"}}>{name}</td>{dataVals.map(function(v,vi){return <td key={vi} style={{padding:"5px 12px",borderBottom:"0.5px solid #f0f0f0",borderRight:"0.5px solid #f0f0f0",color:"#374151",textAlign:"right"}}>{String(v==null?"":v)}</td>;})}</tr>;})} </tbody>
+            </table>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16,padding:"12px 16px",background:"#fafafa",borderRadius:10,border:"1px solid #e5e7eb"}}>
+            <div style={{flex:1,fontSize:13,color:"#374151"}}>{orient==="rowAsX"?<span>X轴 = <b>第1行</b>　系列 = <b>第1列</b></span>:<span>X轴 = <b>第1列</b>　系列 = <b>第1行</b></span>}</div>
+            <button onClick={function(){setOrient(function(o){return o==="rowAsX"?"colAsX":"rowAsX";});}} style={{padding:"8px 16px",borderRadius:8,border:"1.5px solid "+PRI,background:"#fff",color:PRI,fontSize:13,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0}}>⇅ 行列互换</button>
+          </div>
+          <div style={{display:"flex",gap:8}}><Btn onClick={function(){setStep(1);}}>← 上一步</Btn><Btn onClick={goStep3} style={{background:PRI,color:"#fff",border:"none"}}>下一步 →</Btn></div>
+        </div>);
+      })()}
+      {step===3&&(<div>
+        <div style={{fontSize:14,fontWeight:600,color:"#1a1a2e",marginBottom:4}}>单位识别与换算</div>
+        <div style={{display:"flex",gap:20,alignItems:"flex-start",marginBottom:14,flexWrap:"wrap"}}>
+          <div><div style={{fontSize:12,color:"#6b7280",marginBottom:6}}>原始数据单位</div><div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{UNIT_LABELS.map(function(u){return <Tag key={u} active={srcUnit===u} color="#1a3a5c" onClick={function(){setSrcUnit(u);}}>{u}</Tag>;})}</div></div>
+          <div style={{fontSize:18,color:"#d1d5db",paddingTop:22}}>→</div>
+          <div><div style={{fontSize:12,color:"#6b7280",marginBottom:6}}>图表展示单位</div><div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{UNIT_LABELS.map(function(u){return <Tag key={u} active={dstUnit===u} color={PRI} onClick={function(){setDstUnit(u);}}>{u}</Tag>;})}</div></div>
+        </div>
+        {srcUnit!==dstUnit&&<div style={{fontSize:12,color:"#1d4ed8",background:"#eff6ff",borderRadius:6,padding:"6px 12px",marginBottom:10}}>换算倍率 x{UNIT_FACTORS[srcUnit]/UNIT_FACTORS[dstUnit]}</div>}
+        {preview&&(<div style={{marginBottom:12}}>
+          <div style={{fontSize:12,color:"#6b7280",marginBottom:6}}>数据预览（单位：{dstUnit}）</div>
+          <div style={{overflowX:"auto",maxHeight:160,overflowY:"auto",border:"1px solid #e5e7eb",borderRadius:8}}>
+            <table style={{borderCollapse:"collapse",fontSize:12,width:"100%"}}>
+              <thead><tr><th style={{padding:"5px 10px",background:"#f9fafb",borderBottom:"1px solid #e5e7eb",textAlign:"left",color:"#374151"}}>X轴</th>{preview.datasets.map(function(ds){return <th key={ds.label} style={{padding:"5px 10px",background:"#f9fafb",borderBottom:"1px solid #e5e7eb",color:"#374151",textAlign:"right",whiteSpace:"nowrap"}}>{ds.label}</th>;})}</tr></thead>
+              <tbody>{preview.labels.map(function(l,i){return <tr key={l} style={{borderBottom:"0.5px solid #f0f0f0"}}><td style={{padding:"4px 10px",color:"#374151",fontWeight:500}}>{l}</td>{preview.datasets.map(function(ds){return <td key={ds.label} style={{padding:"4px 10px",textAlign:"right",color:"#374151"}}>{ds.data[i]&&ds.data[i].toLocaleString()}</td>;})}</tr>;})} </tbody>
+            </table>
+          </div>
+        </div>)}
+        <div style={{display:"flex",gap:8}}><Btn onClick={function(){setStep(2);}}>← 上一步</Btn><Btn onClick={buildPreview} style={{border:"1px solid #d1d5db"}}>刷新预览</Btn><Btn onClick={function(){p.onApply(preview,dstUnit);}} disabled={!preview} style={{background:PRI,color:"#fff",border:"none"}}>应用到图表 ✓</Btn></div>
+      </div>)}
+    </div>
+  );
+}
+
+/* ── ExportModal ── */
+function ExportModal(p){
+  return(
+    <div className="modal-overlay" onClick={function(e){if(e.target===e.currentTarget)p.onClose();}}>
+      <div style={{background:"#fff",borderRadius:12,border:"1px solid #e5e7eb",padding:"26px 30px",width:340}}>
+        <div style={{fontSize:16,fontWeight:700,color:"#1a1a2e",marginBottom:4}}>导出 / 存储</div>
+        <div style={{fontSize:13,color:"#9ca3af",marginBottom:18}}>选择导出格式或保存为模板</div>
+        <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
+          <Btn onClick={p.onPng} style={{textAlign:"left",display:"flex",alignItems:"center",gap:10,padding:"10px 14px"}}><span style={{width:28,height:28,borderRadius:6,background:"#eff6ff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1d4ed8" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span><div><div style={{fontSize:13,fontWeight:500}}>PNG 图片</div><div style={{fontSize:11,color:"#9ca3af"}}>仅图表画面</div></div></Btn>
+          <Btn onClick={p.onExcel} style={{textAlign:"left",display:"flex",alignItems:"center",gap:10,padding:"10px 14px"}}><span style={{width:28,height:28,borderRadius:6,background:"#f0fdf4",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span><div><div style={{fontSize:13,fontWeight:500}}>Excel（含数据）</div><div style={{fontSize:11,color:"#9ca3af"}}>本地可编辑</div></div></Btn>
+        </div>
+        <div style={{borderTop:"1px solid #f0f0f0",paddingTop:14}}>
+          <Btn onClick={p.onSave} style={{width:"100%",textAlign:"left",display:"flex",alignItems:"center",gap:10,padding:"10px 14px"}}><span style={{width:28,height:28,borderRadius:6,background:"#fef9ec",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg></span><div><div style={{fontSize:13,fontWeight:500}}>存为我的模板</div><div style={{fontSize:11,color:"#9ca3af"}}>保存全部样式</div></div></Btn>
+        </div>
+        <button onClick={p.onClose} style={{marginTop:14,width:"100%",padding:"7px 0",background:"none",border:"none",fontSize:13,color:"#9ca3af",cursor:"pointer"}}>取消</button>
+      </div>
+    </div>
+  );
+}
+
+/* ── Main App ── */
+function App(){
+  var stepS=useState("select"),tplIdS=useState(null),themeS=useState("goldman");
+  var step=stepS[0],setStep=stepS[1];
+  var tplId=tplIdS[0],setTplId=tplIdS[1];
+  var theme=themeS[0],setTheme=themeS[1];
+  var cnFontS=useState(CN_FONTS[0].value),enFontS=useState(EN_FONTS[0].value);
+  var cnFont=cnFontS[0],setCnFont=cnFontS[1];
+  var enFont=enFontS[0],setEnFont=enFontS[1];
+  var xSizeS=useState(11),ySizeS=useState(11),labelSizeS=useState(11);
+  var xSize=xSizeS[0],setXSize=xSizeS[1];
+  var ySize=ySizeS[0],setYSize=ySizeS[1];
+  var labelSize=labelSizeS[0],setLabelSize=labelSizeS[1];
+  var pointStylesS=useState({});
+  var pointStyles=pointStylesS[0],setPointStyles=pointStylesS[1];
+  var showGridS=useState(true),showLabelsS=useState(true),labelPosS=useState("above");
+  var showGrid=showGridS[0],setShowGrid=showGridS[1];
+  var showLabels=showLabelsS[0],setShowLabels=showLabelsS[1];
+  var labelPos=labelPosS[0],setLabelPos=labelPosS[1];
+  var showLabels0S=useState(true),showLabels1S=useState(true);
+  var showLabels0=showLabels0S[0],setShowLabels0=showLabels0S[1];
+  var showLabels1=showLabels1S[0],setShowLabels1=showLabels1S[1];
+  var showAxisS=useState(true),showLegendS=useState(true),legendPosS=useState("bottom");
+  var showAxis=showAxisS[0],setShowAxis=showAxisS[1];
+  var showLegend=showLegendS[0],setShowLegend=showLegendS[1];
+  var legendPos=legendPosS[0],setLegendPos=legendPosS[1];
+  var dstUnitS=useState(""),chartSubtypeS=useState("donut");
+  var dstUnit=dstUnitS[0],setDstUnit=dstUnitS[1];
+  var chartSubtype=chartSubtypeS[0],setChartSubtype=chartSubtypeS[1];
+  var showTitleS=useState(true),titlePosS=useState("left"),chartTitleS=useState("");
+  var showTitle=showTitleS[0],setShowTitle=showTitleS[1];
+  var titlePos=titlePosS[0],setTitlePos=titlePosS[1];
+  var chartTitle=chartTitleS[0],setChartTitle=chartTitleS[1];
+  var chartSrcS=useState("资料来源：公司公告，自行整理");
+  var chartSrc=chartSrcS[0],setChartSrc=chartSrcS[1];
+  var chartKeyS=useState(0);
+  var chartKey=chartKeyS[0],setChartKey=chartKeyS[1];
+  var showUploadS=useState(false),rawDataS=useState(null),showWizardS=useState(false);
+  var showUpload=showUploadS[0],setShowUpload=showUploadS[1];
+  var rawData=rawDataS[0],setRawData=rawDataS[1];
+  var showWizard=showWizardS[0],setShowWizard=showWizardS[1];
+  var externalDataS=useState(null),showExportS=useState(false),savedTplsS=useState([]);
+  var externalData=externalDataS[0],setExternalData=externalDataS[1];
+  var showExport=showExportS[0],setShowExport=showExportS[1];
+  var savedTpls=savedTplsS[0],setSavedTpls=savedTplsS[1];
+  var toastS=useState(""),showApiSettingsS=useState(false);
+  var toast=toastS[0],setToast=toastS[1];
+  var showApiSettings=showApiSettingsS[0],setShowApiSettings=showApiSettingsS[1];
+  var chartAreaRef=useRef(null),fileRef=useRef(null);
+  var t=THEMES[theme];
+
+  useEffect(function(){
+    if(externalData){var src=externalData.bar||externalData.line;if(src&&src.datasets&&src.labels){var range=src.labels[0]+"–"+src.labels[src.labels.length-1];var series=src.datasets.slice(0,3).map(function(d){return d.label;}).join("、");setChartTitle(range+" "+series+(dstUnit?"（"+dstUnit+"）":""));return;}}setChartTitle(AUTO_TITLES[tplId]||"");
+  },[externalData,tplId,dstUnit]);
+
+  function showToast(msg){setToast(msg);setTimeout(function(){setToast("");},2800);}
+  function handleFile(e){var file=e.target.files&&e.target.files[0];if(!file)return;var ext=file.name.split(".").pop().toLowerCase();if(ext==="xlsx"||ext==="xls"){if(!window.XLSX){showToast("XLSX库加载中");return;}var reader=new FileReader();reader.onload=function(ev){var wb=window.XLSX.read(ev.target.result,{type:"binary"});var ws=wb.Sheets[wb.SheetNames[0]];setRawData(window.XLSX.utils.sheet_to_json(ws,{header:1,defval:""}));setShowWizard(true);setShowUpload(false);};reader.readAsBinaryString(file);}e.target.value="";}
+  function handleWizardApply(preview,unit){var m={bar:{labels:preview.labels,datasets:preview.datasets},line:{labels:preview.labels,datasets:preview.datasets},donut:{labels:preview.labels,data:(preview.datasets[0]&&preview.datasets[0].data)||[]},dual:{labels:preview.labels,volume:(preview.datasets[0]&&preview.datasets[0].data)||[],price:(preview.datasets[1]&&preview.datasets[1].data)||[]},horizontal:{labels:preview.labels,data:(preview.datasets[0]&&preview.datasets[0].data)||[]},raw:preview};setExternalData(m);setDstUnit(unit);setShowWizard(false);setChartKey(function(k){return k+1;});showToast("数据已应用");}
+  function handlePng(){var canvas=chartAreaRef.current&&chartAreaRef.current.querySelector("canvas");if(!canvas){showToast("未找到图表");return;}var a=document.createElement("a");a.href=canvas.toDataURL("image/png");a.download="chart.png";a.click();showToast("PNG已导出");setShowExport(false);}
+  function handleExcel(){if(!window.XLSX){showToast("XLSX库加载中");return;}var XLSX=window.XLSX,wb=XLSX.utils.book_new();var ws=XLSX.utils.aoa_to_sheet([["图表标题",chartTitle],["配色",THEMES[theme].name],["单位",dstUnit||"默认"]]);XLSX.utils.book_append_sheet(wb,ws,"图表信息");XLSX.writeFile(wb,"chart_with_data.xlsx");showToast("Excel已导出");setShowExport(false);}
+  function handleSaveTpl(){var tpl={id:Date.now(),name:chartTitle||AUTO_TITLES[tplId],type:tplId,theme:theme,cnFont:cnFont,enFont:enFont,xSize:xSize,ySize:ySize,labelSize:labelSize,showGrid:showGrid,showLabels:showLabels,labelPos:labelPos,showAxis:showAxis,showLegend:showLegend,legendPos:legendPos,dstUnit:dstUnit,showTitle:showTitle,titlePos:titlePos,chartSubtype:chartSubtype};setSavedTpls(function(prev){return prev.concat([tpl]);});showToast("模板已保存");setShowExport(false);}
+  function loadTpl(tpl){setTplId(tpl.type);setTheme(tpl.theme);setCnFont(tpl.cnFont);setEnFont(tpl.enFont);setXSize(tpl.xSize);setYSize(tpl.ySize);setLabelSize(tpl.labelSize);setShowGrid(tpl.showGrid);setShowLabels(tpl.showLabels);setLabelPos(tpl.labelPos||"above");setShowAxis(tpl.showAxis);setShowLegend(tpl.showLegend);setLegendPos(tpl.legendPos);setDstUnit(tpl.dstUnit||"");setShowTitle(tpl.showTitle!==false);setTitlePos(tpl.titlePos||"left");setChartSubtype(tpl.chartSubtype||"donut");setStep("edit");setChartKey(function(k){return k+1;});showToast("已加载："+tpl.name);}
+
+  var titleAligns={left:"flex-start",center:"center",right:"flex-end"};
+  var hasKey=!!localStorage.getItem("ds_api_key");
+
+  if(step==="select")return(
+    <div style={{fontFamily:"Arial,sans-serif",padding:"28px 24px",maxWidth:960,margin:"0 auto",position:"relative"}}>
+      {toast&&<div style={{position:"fixed",top:20,left:"50%",transform:"translateX(-50%)",background:"#1a1a2e",color:"#fff",padding:"8px 20px",borderRadius:20,fontSize:13,zIndex:9999}}>{toast}</div>}
+      {showApiSettings&&<ApiSettingsModal onClose={function(){setShowApiSettings(false);}}/>}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
+        <div>
+          <div style={{fontSize:11,fontWeight:600,color:"#9ca3af",letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:4}}>券商研报图表工作室</div>
+          <div style={{fontSize:22,fontWeight:700,color:"#1a1a2e"}}>选择图表模板</div>
+        </div>
+        <button onClick={function(){setShowApiSettings(true);}} style={{padding:"8px 16px",borderRadius:8,border:"1px solid "+(hasKey?"#16a34a":"#e5e7eb"),background:hasKey?"#f0fdf4":"#fff",color:hasKey?"#16a34a":"#374151",fontSize:12,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          {hasKey?"✓ API 已配置":"API 设置"}
+        </button>
+      </div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:12,marginBottom:28}}>
+        {TEMPLATES.map(function(tpl){return <div key={tpl.id} onClick={function(){setTplId(tpl.id);}} style={{flex:"1 1 150px",minWidth:130,borderRadius:10,border:"2px solid "+(tplId===tpl.id?t.primary:"#e5e7eb"),background:tplId===tpl.id?t.primary+"0a":"#fff",padding:"16px 14px",cursor:"pointer"}}><div style={{fontSize:14,fontWeight:600,color:"#1a1a2e",marginBottom:3}}>{tpl.title}</div><div style={{fontSize:12,color:"#6b7280",marginBottom:8}}>{tpl.subtitle}</div><span style={{fontSize:11,background:tplId===tpl.id?t.primary+"20":"#f3f4f6",color:tplId===tpl.id?t.primary:"#6b7280",padding:"2px 8px",borderRadius:20}}>{tpl.tag}</span></div>;})}
+      </div>
+      {savedTpls.length>0&&<div style={{marginBottom:24}}><div style={{fontSize:12,fontWeight:600,color:"#6b7280",marginBottom:10,textTransform:"uppercase",letterSpacing:"0.08em"}}>我的模板</div><div style={{display:"flex",flexWrap:"wrap",gap:8}}>{savedTpls.map(function(tpl){return <div key={tpl.id} onClick={function(){loadTpl(tpl);}} style={{padding:"7px 14px",borderRadius:8,border:"1px solid #fde68a",background:"#fef9ec",cursor:"pointer",fontSize:13,color:"#92400e"}}>★ {tpl.name}</div>;})}</div></div>}
+      <div style={{borderTop:"1px solid #f0f0f0",paddingTop:18,display:"flex",justifyContent:"flex-end"}}>
+        <Btn onClick={function(){if(tplId)setStep("edit");}} disabled={!tplId} style={{background:tplId?t.primary:undefined,color:tplId?"#fff":undefined,border:"none",padding:"10px 28px",fontSize:14}}>进入编辑 →</Btn>
+      </div>
+    </div>
+  );
+
+  var tplMeta=TEMPLATES.filter(function(x){return x.id===tplId;})[0];
+  return(
+    <div style={{fontFamily:"Arial,sans-serif",background:"#f9fafb",minHeight:"100vh"}}>
+      {toast&&<div style={{position:"fixed",top:20,left:"50%",transform:"translateX(-50%)",background:"#1a1a2e",color:"#fff",padding:"8px 20px",borderRadius:20,fontSize:13,zIndex:9999,pointerEvents:"none"}}>{toast}</div>}
+      {showApiSettings&&<ApiSettingsModal onClose={function(){setShowApiSettings(false);}}/>}
+      {showExport&&<ExportModal onClose={function(){setShowExport(false);}} onPng={handlePng} onExcel={handleExcel} onSave={handleSaveTpl}/>}
+
+      <div style={{background:"#fff",borderBottom:"1px solid #e5e7eb",padding:"10px 20px",display:"flex",alignItems:"center",gap:12}}>
+        <button onClick={function(){setStep("select");}} style={{background:"none",border:"none",cursor:"pointer",color:"#6b7280",fontSize:13,display:"flex",alignItems:"center",gap:4}}>← 返回</button>
+        <div style={{width:1,height:16,background:"#e5e7eb"}}/>
+        <span style={{fontSize:13,fontWeight:600,color:"#1a1a2e"}}>{tplMeta&&tplMeta.title}</span>
+        {dstUnit&&<span style={{fontSize:11,background:"#eff6ff",color:"#1d4ed8",padding:"2px 8px",borderRadius:20}}>单位：{dstUnit}</span>}
+        <div style={{flex:1}}/>
+        <button onClick={function(){setShowApiSettings(true);}} style={{padding:"6px 12px",borderRadius:8,border:"1px solid "+(hasKey?"#16a34a":"#e5e7eb"),background:hasKey?"#f0fdf4":"#fff",color:hasKey?"#16a34a":"#374151",fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          {hasKey?"AI 已就绪":"配置 API"}
+        </button>
+        <Btn onClick={function(){setShowUpload(function(v){return !v;});}} style={{fontSize:12,padding:"6px 14px"}}>上传数据</Btn>
+        <Btn onClick={function(){setShowExport(true);}} style={{fontSize:12,padding:"6px 14px",background:t.primary,color:"#fff",border:"none"}}>导出 / 存储</Btn>
+      </div>
+
+      {showUpload&&(<div style={{background:"#fff",borderBottom:"1px solid #e5e7eb",padding:"16px 20px"}}>
+        <div style={{fontSize:13,fontWeight:600,color:"#1a1a2e",marginBottom:8}}>上传数据文件</div>
+        <div style={{border:"2px dashed #e5e7eb",borderRadius:10,padding:"20px",textAlign:"center",cursor:"pointer",background:"#f9fafb",maxWidth:320}} onClick={function(){fileRef.current&&fileRef.current.click();}}>
+          <div style={{fontSize:13,color:"#374151",fontWeight:500}}>点击上传 Excel 文件</div>
+          <div style={{fontSize:11,color:"#9ca3af",marginTop:4}}>支持 XLSX / XLS</div>
+          <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={handleFile}/>
+        </div>
+      </div>)}
+
+      {showWizard&&rawData&&(<div style={{padding:"0 20px"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:16,marginBottom:2}}>
+          <div style={{fontSize:14,fontWeight:700,color:"#1a1a2e"}}>数据配置向导</div>
+          <button onClick={function(){setShowWizard(false);}} style={{background:"none",border:"none",cursor:"pointer",color:"#9ca3af",fontSize:22,lineHeight:1}}>×</button>
+        </div>
+        <DataConfigWizard rawData={rawData} onApply={handleWizardApply} onCancel={function(){setShowWizard(false);}}/>
+      </div>)}
+
+      <div style={{display:"flex",maxWidth:1280,margin:"0 auto"}}>
+        <div style={{flex:1,padding:"24px 20px 20px",minWidth:0}}>
+          <div ref={chartAreaRef} style={{background:"#fff",borderRadius:12,border:"1px solid #e5e7eb",padding:"24px 24px 18px"}}>
+            {showTitle&&(<div style={{display:"flex",justifyContent:titleAligns[titlePos],marginBottom:14}}>
+              <input value={chartTitle} onChange={function(e){setChartTitle(e.target.value);}} placeholder="点击编辑图表标题…" style={{border:"none",outline:"none",fontSize:15,fontWeight:700,color:"#1a1a2e",background:"transparent",fontFamily:cnFont,width:"100%",textAlign:titlePos,cursor:"text",borderBottom:"1.5px dashed #e5e7eb",paddingBottom:4}}/>
+            </div>)}
+            <ChartView key={chartKey} type={tplId} theme={theme} cnFont={cnFont} enFont={enFont} xSize={xSize} ySize={ySize} labelSize={labelSize} showGrid={showGrid} showLabels={showLabels} showLabels0={showLabels0} showLabels1={showLabels1} labelPos={labelPos} showAxis={showAxis} showLegend={showLegend} legendPos={legendPos} dstUnit={dstUnit} externalData={externalData} pointStyles={pointStyles} chartSubtype={chartSubtype}/>
+            <div style={{marginTop:10,paddingTop:10,borderTop:"1px solid #f3f4f6"}}>
+              <input value={chartSrc} onChange={function(e){setChartSrc(e.target.value);}} style={{width:"100%",border:"none",outline:"none",fontSize:11,color:"#9ca3af",background:"transparent",fontFamily:cnFont}}/>
+            </div>
+          </div>
+          <AnalysisPanel tplId={tplId} externalData={externalData} theme={theme} dstUnit={dstUnit}/>
+        </div>
+
+        <div style={{width:260,borderLeft:"1px solid #e5e7eb",background:"#fff",padding:"16px 16px",overflowY:"auto",maxHeight:"calc(100vh - 52px)"}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#1a1a2e",marginBottom:14}}>控制面板</div>
+          <Collapsible label="配色方案">
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5}}>
+              {Object.keys(THEMES).map(function(k){var v=THEMES[k];return <div key={k} onClick={function(){setTheme(k);}} style={{padding:"7px 10px",borderRadius:7,cursor:"pointer",fontSize:12,border:"1.5px solid "+(theme===k?v.primary:"#e5e7eb"),background:theme===k?v.primary+"10":"#fff",color:theme===k?v.primary:"#374151",fontWeight:theme===k?600:400}}><div style={{width:18,height:4,borderRadius:2,background:v.primary,marginBottom:3}}/>{v.name}</div>;})}
+            </div>
+          </Collapsible>
+          <Collapsible label="标题设置" defaultOpen={true}>
+            <Tog label="显示标题" value={showTitle} onChange={setShowTitle} color={t.primary}/>
+            {showTitle&&<>
+              <div style={{fontSize:11,color:"#9ca3af",marginBottom:5,marginTop:6}}>标题对齐</div>
+              <div style={{display:"flex",gap:5,marginBottom:8}}>{[["left","左"],["center","居中"],["right","右"]].map(function(pair){var v=pair[0],lbl=pair[1];return <button key={v} onClick={function(){setTitlePos(v);}} style={{flex:1,padding:"5px 0",borderRadius:7,border:"1.5px solid "+(titlePos===v?t.primary:"#e5e7eb"),background:titlePos===v?t.primary+"10":"#fff",color:titlePos===v?t.primary:"#374151",fontSize:12,cursor:"pointer"}}>{lbl}</button>;})}</div>
+              <input value={chartTitle} onChange={function(e){setChartTitle(e.target.value);}} style={{width:"100%",fontSize:12,padding:"6px 8px",border:"1px solid #e5e7eb",borderRadius:6,color:"#374151",boxSizing:"border-box"}} placeholder="输入标题…"/>
+            </>}
+          </Collapsible>
+          <Collapsible label="字体设置" defaultOpen={true}>
+            <div style={{fontSize:11,color:"#9ca3af",marginBottom:5}}>中文字体</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4,marginBottom:8}}>{CN_FONTS.map(function(f){return <div key={f.value} onClick={function(){setCnFont(f.value);}} style={{padding:"5px 8px",borderRadius:6,border:"1.5px solid "+(cnFont===f.value?t.primary:"#e5e7eb"),background:cnFont===f.value?t.primary+"10":"#fff",cursor:"pointer",fontSize:12,color:cnFont===f.value?t.primary:"#374151",fontFamily:f.value,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.label}</div>;})}</div>
+            <div style={{fontSize:11,color:"#9ca3af",marginBottom:5}}>英文 / 数字字体</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4,marginBottom:8}}>{EN_FONTS.map(function(f){return <div key={f.value} onClick={function(){setEnFont(f.value);}} style={{padding:"5px 8px",borderRadius:6,border:"1.5px solid "+(enFont===f.value?t.primary:"#e5e7eb"),background:enFont===f.value?t.primary+"10":"#fff",cursor:"pointer",fontSize:11,color:enFont===f.value?t.primary:"#374151",fontFamily:f.value,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.label}</div>;})}</div>
+            {[["X轴标签",xSize,setXSize],["Y轴标签",ySize,setYSize],["数据标签",labelSize,setLabelSize]].map(function(row){var name=row[0],val=row[1],fn=row[2];return <div key={name} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}><span style={{fontSize:12,color:"#374151",width:56,flexShrink:0}}>{name}</span><input type="range" min="9" max="18" step="1" value={val} onChange={function(e){fn(Number(e.target.value));}} style={{flex:1}}/><span style={{fontSize:12,fontWeight:500,color:"#374151",minWidth:28}}>{val}px</span></div>;})}
+          </Collapsible>
+          <Collapsible label="图表元素" defaultOpen={true}>
+            {tplId==="donut"&&<>
+              <div style={{fontSize:11,color:"#9ca3af",marginBottom:5}}>图表形状</div>
+              <div style={{display:"flex",gap:5,marginBottom:8}}>{[["donut","环形图"],["pie","饼图"]].map(function(pair){var v=pair[0],lbl=pair[1];return <button key={v} onClick={function(){setChartSubtype(v);setChartKey(function(k){return k+1;});}} style={{flex:1,padding:"6px 0",borderRadius:7,border:"1.5px solid "+(chartSubtype===v?t.primary:"#e5e7eb"),background:chartSubtype===v?t.primary+"10":"#fff",color:chartSubtype===v?t.primary:"#374151",fontSize:12,cursor:"pointer"}}>{lbl}</button>;})}</div>
+            </>}
+            <Tog label="网格线" value={showGrid} onChange={function(v){setShowGrid(v);setChartKey(function(k){return k+1;});}} color={t.primary}/>
+            <Tog label="数据标签" value={showLabels} onChange={function(v){setShowLabels(v);setChartKey(function(k){return k+1;});}} color={t.primary}/>
+            {showLabels&&<>
+              <div style={{fontSize:11,color:"#9ca3af",marginBottom:5}}>标签位置</div>
+              <div style={{display:"flex",gap:5,marginBottom:8}}>{[["above","顶部"],["center","居中"],["below","底部"]].map(function(pair){var v=pair[0],lbl=pair[1];return <button key={v} onClick={function(){setLabelPos(v);setChartKey(function(k){return k+1;});}} style={{flex:1,padding:"5px 0",borderRadius:7,border:"1.5px solid "+(labelPos===v?t.primary:"#e5e7eb"),background:labelPos===v?t.primary+"10":"#fff",color:labelPos===v?t.primary:"#374151",fontSize:11,cursor:"pointer"}}>{lbl}</button>;})}</div>
+              <div style={{fontSize:11,color:"#9ca3af",marginBottom:5}}>系列标签控制</div>
+              <div style={{display:"flex",flexDirection:"column",gap:4,marginBottom:6}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}><span style={{fontSize:12,color:"#374151"}}>系列 1</span><div onClick={function(){setShowLabels0(function(v){return !v;});setChartKey(function(k){return k+1;});}} style={{width:36,height:20,borderRadius:10,background:showLabels0?t.primary:"#d1d5db",cursor:"pointer",position:"relative"}}><div style={{position:"absolute",top:2,left:showLabels0?18:2,width:16,height:16,borderRadius:8,background:"#fff",transition:"left .2s"}}/></div></div>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}><span style={{fontSize:12,color:"#374151"}}>系列 2</span><div onClick={function(){setShowLabels1(function(v){return !v;});setChartKey(function(k){return k+1;});}} style={{width:36,height:20,borderRadius:10,background:showLabels1?t.primary:"#d1d5db",cursor:"pointer",position:"relative"}}><div style={{position:"absolute",top:2,left:showLabels1?18:2,width:16,height:16,borderRadius:8,background:"#fff",transition:"left .2s"}}/></div></div>
+              </div>
+            </>}
+            <Tog label="坐标轴" value={showAxis} onChange={function(v){setShowAxis(v);setChartKey(function(k){return k+1;});}} color={t.primary}/>
+            <Tog label="图例" value={showLegend} onChange={setShowLegend} color={t.primary}/>
+            {showLegend&&<div style={{display:"flex",gap:6,marginTop:4,marginBottom:4}}>{["top","bottom"].map(function(p2){return <button key={p2} onClick={function(){setLegendPos(p2);}} style={{flex:1,padding:"5px 0",borderRadius:7,border:"1.5px solid "+(legendPos===p2?t.primary:"#e5e7eb"),background:legendPos===p2?t.primary+"10":"#fff",color:legendPos===p2?t.primary:"#374151",fontSize:12,cursor:"pointer"}}>{p2==="top"?"顶部":"底部"}</button>;})}</div>}
+          </Collapsible>
+          <Collapsible label="纵轴单位">
+            <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{["","元","万元","百万元","亿元"].map(function(u){return <Tag key={u} active={dstUnit===u} color={t.primary} onClick={function(){setDstUnit(u);setChartKey(function(k){return k+1;});}}>{u||"默认"}</Tag>;})}</div>
+          </Collapsible>
+          <Collapsible label="数据点精细样式">
+            <PointStylePanel pointStyles={pointStyles} onUpdate={setPointStyles} chartType={tplId} externalData={externalData}/>
+            {Object.keys(pointStyles).filter(function(k){return Object.keys(pointStyles[k]||{}).length>0;}).length>0&&<button onClick={function(){setPointStyles({});setChartKey(function(k){return k+1;});}} style={{marginTop:8,fontSize:11,color:"#ef4444",background:"none",border:"none",cursor:"pointer",padding:0}}>清除全部数据点样式</button>}
+          </Collapsible>
+          {savedTpls.length>0&&<Collapsible label="我的模板"><div style={{display:"flex",flexDirection:"column",gap:5}}>{savedTpls.map(function(tpl){return <div key={tpl.id} onClick={function(){loadTpl(tpl);}} style={{padding:"6px 10px",borderRadius:7,border:"1px solid #fde68a",background:"#fef9ec",cursor:"pointer",fontSize:12,color:"#92400e"}}>★ {tpl.name}</div>;})}</div></Collapsible>}
+          <div style={{marginTop:14,padding:"10px 12px",background:"#f9fafb",borderRadius:8,fontSize:11,color:"#9ca3af",lineHeight:1.7}}>标题和数据来源均可直接点击编辑。</div>
+          <Btn onClick={function(){setChartKey(function(k){return k+1;});}} style={{width:"100%",marginTop:8,fontSize:12,display:"flex",justifyContent:"center"}}>刷新图表</Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
